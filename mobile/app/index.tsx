@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, StyleSheet, Alert, TouchableOpacity, Text } from 'react-native';
+import { View, StyleSheet, Alert, TouchableOpacity, Text, Image } from 'react-native';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { StatusBar } from 'expo-status-bar';
@@ -10,11 +10,16 @@ import { SavedRoutes } from '../components/SavedRoutes';
 import { RunHistory } from '../components/RunHistory';
 import { RunTracker } from '../components/RunTracker';
 import { RunSummary } from '../components/RunSummary';
+import { LoginScreen } from '../components/LoginScreen';
+import { ProfileScreen } from '../components/ProfileScreen';
 import { decodePolyline, toLatLng, toLatLngArray } from '../utils/polyline';
+import { useAuth } from '../contexts/AuthContext';
+import { cloudStorageService } from '../services/cloudStorage';
 
-type AppScreen = 'home' | 'savedRoutes' | 'runHistory' | 'tracking' | 'summary';
+type AppScreen = 'home' | 'savedRoutes' | 'runHistory' | 'tracking' | 'summary' | 'login' | 'profile';
 
 export default function HomeScreen() {
+  const { user, loading: authLoading } = useAuth();
   const mapRef = useRef<MapView>(null);
   const [currentLocation, setCurrentLocation] = useState<Coordinates | null>(null);
   const [destination, setDestination] = useState<Coordinates | null>(null);
@@ -24,6 +29,10 @@ export default function HomeScreen() {
   const [currentScreen, setCurrentScreen] = useState<AppScreen>('home');
   const [completedRunStats, setCompletedRunStats] = useState<RunStats | null>(null);
   const [trackedCoordinates, setTrackedCoordinates] = useState<Coordinates[]>([]);
+  const [hasSkippedLogin, setHasSkippedLogin] = useState(false);
+
+  // Check if should show login screen
+  const shouldShowLogin = !authLoading && !user && !hasSkippedLogin && currentScreen === 'login';
 
   useEffect(() => {
     (async () => {
@@ -52,6 +61,20 @@ export default function HomeScreen() {
       });
     })();
   }, []);
+
+  // Migrate local data when user signs in
+  useEffect(() => {
+    if (user) {
+      cloudStorageService.migrateLocalToCloud().then(({ routes, runs }) => {
+        if (routes > 0 || runs > 0) {
+          Alert.alert(
+            'Data Synced',
+            `Migrated ${routes} routes and ${runs} runs to your account.`
+          );
+        }
+      });
+    }
+  }, [user]);
 
   const handleMapPress = (event: { nativeEvent: { coordinate: { latitude: number; longitude: number } } }) => {
     if (pickingDestination) {
@@ -120,6 +143,18 @@ export default function HomeScreen() {
   const routeCoordinates = generatedRoute
     ? toLatLngArray(decodePolyline(generatedRoute.geometry))
     : [];
+
+  // Show login screen
+  if (currentScreen === 'login') {
+    return (
+      <LoginScreen
+        onSkip={() => {
+          setHasSkippedLogin(true);
+          setCurrentScreen('home');
+        }}
+      />
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -207,6 +242,17 @@ export default function HomeScreen() {
 
       {/* Top Navigation Bar */}
       <View style={styles.topNav}>
+        {/* Profile button */}
+        <TouchableOpacity
+          style={styles.navButton}
+          onPress={() => setCurrentScreen('profile')}
+        >
+          {user?.photoURL ? (
+            <Image source={{ uri: user.photoURL }} style={styles.avatarSmall} />
+          ) : (
+            <Text style={styles.navButtonText}>👤</Text>
+          )}
+        </TouchableOpacity>
         <TouchableOpacity
           style={styles.navButton}
           onPress={() => setCurrentScreen('savedRoutes')}
@@ -272,6 +318,14 @@ export default function HomeScreen() {
         visible={currentScreen === 'runHistory'}
         onClose={() => setCurrentScreen('home')}
       />
+
+      {/* Profile Screen */}
+      {currentScreen === 'profile' && (
+        <ProfileScreen
+          onClose={() => setCurrentScreen('home')}
+          onSignIn={() => setCurrentScreen('login')}
+        />
+      )}
     </View>
   );
 }
@@ -302,9 +356,15 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 4,
     elevation: 3,
+    overflow: 'hidden',
   },
   navButtonText: {
     fontSize: 20,
+  },
+  avatarSmall: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
   },
   bottomSheet: {
     position: 'absolute',
