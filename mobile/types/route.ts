@@ -54,3 +54,34 @@ export interface RouteTypeInfo {
   description: string;
   requires_end_destination: boolean;
 }
+
+export interface PlaceResult {
+  place_id: string;
+  name: string;
+  address: string;
+  coordinates: Coordinates;
+  types: string[];
+  rating?: number;
+  distance_meters?: number;
+}
+
+export interface POICategory {
+  id: string;
+  name: string;
+  types: string[];
+}
+
+export interface SavedRoute {
+  id: string;
+  name: string;
+  route: GeneratedRoute;
+  created_at: string;
+}
+
+export interface RunStats {
+  distance_meters: number;
+  duration_seconds: number;
+  pace_per_mile: number;
+  coordinates: Coordinates[];
+  timestamps: number[];
+}

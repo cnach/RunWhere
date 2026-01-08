@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import routesRouter from './routes/routes';
+import placesRouter from './routes/places';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -12,6 +13,7 @@ app.use(express.json());
 
 // Routes
 app.use('/api/routes', routesRouter);
+app.use('/api/places', placesRouter);
 
 // Health check
 app.get('/health', (_req, res) => {

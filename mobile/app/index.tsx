@@ -1,12 +1,18 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, StyleSheet, Alert } from 'react-native';
+import { View, StyleSheet, Alert, TouchableOpacity, Text } from 'react-native';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { StatusBar } from 'expo-status-bar';
-import { Coordinates, GeneratedRoute } from '../types/route';
+import { Coordinates, GeneratedRoute, PlaceResult, POIType, RunStats } from '../types/route';
 import { RouteSetup } from '../components/RouteSetup';
 import { RouteDisplay } from '../components/RouteDisplay';
+import { SavedRoutes } from '../components/SavedRoutes';
+import { RunHistory } from '../components/RunHistory';
+import { RunTracker } from '../components/RunTracker';
+import { RunSummary } from '../components/RunSummary';
 import { decodePolyline, toLatLng, toLatLngArray } from '../utils/polyline';
+
+type AppScreen = 'home' | 'savedRoutes' | 'runHistory' | 'tracking' | 'summary';
 
 export default function HomeScreen() {
   const mapRef = useRef<MapView>(null);
@@ -14,6 +20,10 @@ export default function HomeScreen() {
   const [destination, setDestination] = useState<Coordinates | null>(null);
   const [generatedRoute, setGeneratedRoute] = useState<GeneratedRoute | null>(null);
   const [pickingDestination, setPickingDestination] = useState(false);
+  const [selectedPOI, setSelectedPOI] = useState<{ place: PlaceResult; type: POIType } | null>(null);
+  const [currentScreen, setCurrentScreen] = useState<AppScreen>('home');
+  const [completedRunStats, setCompletedRunStats] = useState<RunStats | null>(null);
+  const [trackedCoordinates, setTrackedCoordinates] = useState<Coordinates[]>([]);
 
   useEffect(() => {
     (async () => {
@@ -69,6 +79,42 @@ export default function HomeScreen() {
   const handleClearRoute = () => {
     setGeneratedRoute(null);
     setDestination(null);
+    setSelectedPOI(null);
+    setTrackedCoordinates([]);
+  };
+
+  const handleStartRun = () => {
+    if (generatedRoute) {
+      setCurrentScreen('tracking');
+    }
+  };
+
+  const handleFinishRun = (stats: RunStats) => {
+    setCompletedRunStats(stats);
+    setTrackedCoordinates(stats.coordinates);
+    setCurrentScreen('summary');
+  };
+
+  const handleCloseSummary = () => {
+    setCurrentScreen('home');
+    setCompletedRunStats(null);
+    handleClearRoute();
+  };
+
+  const handleSelectSavedRoute = (route: GeneratedRoute) => {
+    setGeneratedRoute(route);
+    setCurrentScreen('home');
+
+    // Fit map to show the route
+    if (route.geometry) {
+      const routeCoords = decodePolyline(route.geometry);
+      if (routeCoords.length > 0) {
+        mapRef.current?.fitToCoordinates(toLatLngArray(routeCoords), {
+          edgePadding: { top: 100, right: 50, bottom: 300, left: 50 },
+          animated: true,
+        });
+      }
+    }
   };
 
   const routeCoordinates = generatedRoute
@@ -102,6 +148,15 @@ export default function HomeScreen() {
           />
         )}
 
+        {/* Tracked run path */}
+        {trackedCoordinates.length > 1 && (
+          <Polyline
+            coordinates={toLatLngArray(trackedCoordinates)}
+            strokeColor="#34C759"
+            strokeWidth={3}
+          />
+        )}
+
         {/* Start marker */}
         {currentLocation && generatedRoute && (
           <Marker
@@ -129,6 +184,15 @@ export default function HomeScreen() {
           />
         )}
 
+        {/* Selected POI marker */}
+        {selectedPOI && !generatedRoute && (
+          <Marker
+            coordinate={toLatLng(selectedPOI.place.coordinates)}
+            title={selectedPOI.place.name}
+            pinColor="yellow"
+          />
+        )}
+
         {/* Waypoint markers */}
         {generatedRoute?.waypoints.map((waypoint, index) => (
           <Marker
@@ -141,16 +205,38 @@ export default function HomeScreen() {
         ))}
       </MapView>
 
-      {/* Bottom sheet */}
+      {/* Top Navigation Bar */}
+      <View style={styles.topNav}>
+        <TouchableOpacity
+          style={styles.navButton}
+          onPress={() => setCurrentScreen('savedRoutes')}
+        >
+          <Text style={styles.navButtonText}>💾</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.navButton}
+          onPress={() => setCurrentScreen('runHistory')}
+        >
+          <Text style={styles.navButtonText}>📊</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Bottom sheet - changes based on state */}
       <View style={styles.bottomSheet}>
-        {generatedRoute ? (
+        {currentScreen === 'tracking' && generatedRoute ? (
+          <RunTracker
+            route={generatedRoute}
+            onFinish={handleFinishRun}
+            onCancel={() => setCurrentScreen('home')}
+          />
+        ) : currentScreen === 'summary' && completedRunStats ? (
+          <RunSummary stats={completedRunStats} onClose={handleCloseSummary} />
+        ) : generatedRoute ? (
           <RouteDisplay
             route={generatedRoute}
-            onRegenerate={() => {
-              // Regenerate with same settings
-              setGeneratedRoute(null);
-            }}
+            onRegenerate={() => setGeneratedRoute(null)}
             onClear={handleClearRoute}
+            onStartRun={handleStartRun}
           />
         ) : (
           <RouteSetup
@@ -158,6 +244,8 @@ export default function HomeScreen() {
             destination={destination}
             onPickDestination={() => setPickingDestination(true)}
             onRouteGenerated={handleRouteGenerated}
+            selectedPOI={selectedPOI}
+            onSelectPOI={setSelectedPOI}
           />
         )}
       </View>
@@ -166,10 +254,24 @@ export default function HomeScreen() {
       {pickingDestination && (
         <View style={styles.pickingOverlay}>
           <View style={styles.pickingBanner}>
-            <View style={styles.pickingText}>Tap the map to set your destination</View>
+            <Text style={styles.pickingText}>Tap the map to set your destination</Text>
           </View>
         </View>
       )}
+
+      {/* Saved Routes Screen */}
+      <SavedRoutes
+        visible={currentScreen === 'savedRoutes'}
+        onClose={() => setCurrentScreen('home')}
+        onSelectRoute={handleSelectSavedRoute}
+        currentRoute={generatedRoute}
+      />
+
+      {/* Run History Screen */}
+      <RunHistory
+        visible={currentScreen === 'runHistory'}
+        onClose={() => setCurrentScreen('home')}
+      />
     </View>
   );
 }
@@ -181,6 +283,29 @@ const styles = StyleSheet.create({
   map: {
     flex: 1,
   },
+  topNav: {
+    position: 'absolute',
+    top: 60,
+    right: 16,
+    flexDirection: 'column',
+    gap: 8,
+  },
+  navButton: {
+    width: 48,
+    height: 48,
+    backgroundColor: '#fff',
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  navButtonText: {
+    fontSize: 20,
+  },
   bottomSheet: {
     position: 'absolute',
     bottom: 0,
@@ -191,7 +316,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 60,
     left: 20,
-    right: 20,
+    right: 80,
   },
   pickingBanner: {
     backgroundColor: '#007AFF',

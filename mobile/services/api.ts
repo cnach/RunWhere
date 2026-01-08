@@ -4,6 +4,9 @@ import {
   RouteTypeInfo,
   Coordinates,
   RouteType,
+  PlaceResult,
+  POICategory,
+  POIConfig,
 } from '../types/route';
 
 // Update this to your backend URL
@@ -52,12 +55,14 @@ export const routeApi = {
     end?: Coordinates | null;
     distance_miles: number;
     route_type: RouteType;
+    poi?: POIConfig;
   }): Promise<GeneratedRoute> => {
     const request: RouteGenerationRequest = {
       start: params.start,
       end: params.end || null,
       distance_miles: params.distance_miles,
       route_type: params.route_type,
+      poi: params.poi,
     };
 
     return fetchApi<GeneratedRoute>('/api/routes/generate', {
@@ -78,6 +83,43 @@ export const routeApi = {
    */
   healthCheck: async (): Promise<{ status: string; service: string }> => {
     return fetchApi<{ status: string; service: string }>('/health');
+  },
+};
+
+export const placesApi = {
+  /**
+   * Get available POI categories
+   */
+  getCategories: async (): Promise<{ categories: POICategory[] }> => {
+    return fetchApi<{ categories: POICategory[] }>('/api/places/categories');
+  },
+
+  /**
+   * Search for places nearby
+   */
+  searchNearby: async (params: {
+    location: Coordinates;
+    category: string;
+    radius?: number;
+  }): Promise<{ places: PlaceResult[] }> => {
+    return fetchApi<{ places: PlaceResult[] }>('/api/places/nearby', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    });
+  },
+
+  /**
+   * Search for places by text
+   */
+  searchByText: async (params: {
+    query: string;
+    location: Coordinates;
+    radius?: number;
+  }): Promise<{ places: PlaceResult[] }> => {
+    return fetchApi<{ places: PlaceResult[] }>('/api/places/search', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    });
   },
 };
 

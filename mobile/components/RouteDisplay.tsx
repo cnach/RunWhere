@@ -6,9 +6,15 @@ interface RouteDisplayProps {
   route: GeneratedRoute;
   onRegenerate: () => void;
   onClear: () => void;
+  onStartRun?: () => void;
 }
 
-export function RouteDisplay({ route, onRegenerate, onClear }: RouteDisplayProps) {
+export function RouteDisplay({
+  route,
+  onRegenerate,
+  onClear,
+  onStartRun,
+}: RouteDisplayProps) {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -46,12 +52,19 @@ export function RouteDisplay({ route, onRegenerate, onClear }: RouteDisplayProps
         </View>
       )}
 
+      {/* Start Run Button */}
+      {onStartRun && (
+        <TouchableOpacity style={styles.startRunButton} onPress={onStartRun}>
+          <Text style={styles.startRunButtonText}>🏃 Start Run</Text>
+        </TouchableOpacity>
+      )}
+
       <View style={styles.buttonContainer}>
         <TouchableOpacity
           style={[styles.button, styles.regenerateButton]}
           onPress={onRegenerate}
         >
-          <Text style={styles.regenerateButtonText}>Shuffle Route</Text>
+          <Text style={styles.regenerateButtonText}>Shuffle</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.button, styles.clearButton]}
@@ -135,6 +148,18 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#92400E',
     textAlign: 'center',
+  },
+  startRunButton: {
+    backgroundColor: '#34C759',
+    borderRadius: 12,
+    paddingVertical: 16,
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  startRunButtonText: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '700',
   },
   buttonContainer: {
     flexDirection: 'row',
