@@ -1,12 +1,12 @@
 import {
   Coordinates,
-  RouteType,
   RouteGenerationRequest,
   GeneratedRoute,
   Waypoint,
   RouteGenerationOptions,
 } from '../types/route';
 import { v4 as uuidv4 } from 'uuid';
+import { getWalkingRoute, RoutesApiResult } from './googleRoutes';
 
 // Earth radius in kilometers
 const EARTH_RADIUS_KM = 6371;
@@ -329,19 +329,63 @@ export async function generateRoute(
     // Insert POI at appropriate position (roughly middle of route)
     const insertIndex = Math.floor(waypoints.length / 2);
     waypoints.splice(insertIndex, 0, poiWaypoint);
-
-    // Recalculate distance
-    routeDistanceKm = calculateRouteDistance(request.start, waypoints, endPoint);
   }
 
-  // Build coordinate list for geometry encoding
+  // Get real walking route from Google Routes API
+  const intermediateCoords = waypoints.map((wp) => wp.coordinates);
+
+  let googleRoute: RoutesApiResult;
+  try {
+    googleRoute = await getWalkingRoute(request.start, endPoint, intermediateCoords);
+  } catch (error) {
+    // Fallback to calculated route if API fails
+    console.error('Google Routes API error, using fallback:', error);
+    return generateFallbackRoute(request, waypoints, endPoint);
+  }
+
+  // Convert Google steps to our turn-by-turn format
+  const turnByTurn = googleRoute.steps.map((step) => ({
+    instruction: step.instruction,
+    distance_meters: step.distanceMeters,
+    coordinates: step.endLocation,
+  }));
+
+  const distanceMiles = Math.round((googleRoute.distanceMeters / 1609.34) * 10) / 10;
+
+  return {
+    route_id: uuidv4(),
+    geometry: googleRoute.encodedPolyline,
+    distance_miles: distanceMiles,
+    estimated_time_minutes: Math.round(googleRoute.durationSeconds / 60),
+    waypoints,
+    turn_by_turn: turnByTurn,
+    route_type: request.route_type,
+    poi_included: request.poi
+      ? {
+          name: request.poi.name || 'Point of Interest',
+          type: request.poi.type,
+        }
+      : undefined,
+  };
+}
+
+/**
+ * Fallback route generation when Google API is unavailable
+ */
+function generateFallbackRoute(
+  request: RouteGenerationRequest,
+  waypoints: Waypoint[],
+  endPoint: Coordinates
+): GeneratedRoute {
   const allCoordinates: Coordinates[] = [
     request.start,
     ...waypoints.map((wp) => wp.coordinates),
     endPoint,
   ];
 
-  // Generate simple turn-by-turn instructions
+  const routeDistanceKm = calculateRouteDistance(request.start, waypoints, endPoint);
+  const distanceMiles = routeDistanceKm * KM_TO_MILES;
+
   const turnByTurn = waypoints.map((wp, index) => ({
     instruction: wp.is_poi
       ? `${request.poi?.type === 'stop_at' ? 'Stop at' : 'Pass by'} ${wp.name || 'waypoint'}`
@@ -354,7 +398,6 @@ export async function generateRoute(
     coordinates: wp.coordinates,
   }));
 
-  // Add final instruction
   turnByTurn.push({
     instruction:
       request.route_type === 'loop' ? 'Return to start' : 'Arrive at destination',
@@ -365,8 +408,6 @@ export async function generateRoute(
       ) * 1000,
     coordinates: endPoint,
   });
-
-  const distanceMiles = routeDistanceKm * KM_TO_MILES;
 
   return {
     route_id: uuidv4(),
